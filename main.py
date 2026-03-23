@@ -1,119 +1,110 @@
+import os
 import discord
 from discord.ext import commands
-import os
+from discord import ui, ButtonStyle, Interaction, Embed
 
+# ----------------------
+# Intents
+# ----------------------
 intents = discord.Intents.default()
 intents.guilds = True
-intents.members = True
-intents.message_content = True  # necessário para algumas interações
+intents.members = True  # OBRIGATÓRIO para alterar nicknames e roles
+intents.message_content = True  # Necessário se for ler mensagens
 
+# ----------------------
+# Bot
+# ----------------------
 bot = commands.Bot(command_prefix="!", intents=intents)
 
-# IDs do servidor e canal
-GUILD_ID = int(os.getenv("GUILD_ID", 0))
-CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
-TOKEN = os.getenv("DISCORD_TOKEN")
+GUILD_ID = int(os.environ.get("GUILD_ID", 0))
+CHANNEL_ID = int(os.environ.get("CHANNEL_ID", 0))
 
-# Modal de whitelist
-class WhitelistModal(discord.ui.Modal, title="Whitelist - Informações"):
-    nome = discord.ui.TextInput(label="Digite seu nome", required=True)
-    id = discord.ui.TextInput(label="Digite sua ID", required=True)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        guild = interaction.guild
-        member = interaction.user
-
-        if not guild:
-            await interaction.response.send_message(
-                "❌ Erro ao obter informações do servidor.", ephemeral=True
-            )
-            return
-
-        try:
-            guild_member = await guild.fetch_member(member.id)
-            is_owner = guild.owner_id == member.id
-
-            # Alterar nickname se não for dono
-            if not is_owner:
-                await guild_member.edit(nick=f"{self.id.value} - {self.nome.value}")
-
-            # Pegar cargos
-            role_whitelist = discord.utils.get(guild.roles, name="Whitelisted")
-            role_unverified = discord.utils.get(guild.roles, name="UNVERIFIED")
-            role_membro = discord.utils.get(guild.roles, name="Membros")
-
-            # Aplicar cargos
-            if role_whitelist:
-                await guild_member.add_roles(role_whitelist)
-            if role_membro:
-                await guild_member.add_roles(role_membro)
-            if role_unverified:
-                await guild_member.remove_roles(role_unverified)
-
-            aviso = ""
-            if is_owner:
-                aviso = "\n⚠️ Você é o dono do servidor — não é possível mudar seu nickname."
-
-            await interaction.response.send_message(
-                f"✅ Você foi whitelisted!\nNick: {self.id.value} - {self.nome.value}{aviso}",
-                ephemeral=True,
-            )
-
-        except Exception as e:
-            print(e)
-            await interaction.response.send_message(
-                "❌ Ocorreu um erro ao tentar whitelistar você. Verifique a hierarquia de cargos do bot.",
-                ephemeral=True,
-            )
-
-# Botão de whitelist
-class WhitelistView(discord.ui.View):
-    @discord.ui.button(label="✅ Whitelist", style=discord.ButtonStyle.green)
-    async def whitelist(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_modal(WhitelistModal())
-
-# Evento de ready
+# ----------------------
+# Evento on_ready
+# ----------------------
 @bot.event
 async def on_ready():
     print(f"Bot online como {bot.user}")
 
     guild = bot.get_guild(GUILD_ID)
     if not guild:
-        print("❌ Servidor não encontrado.")
+        print("❌ Servidor não encontrado. Verifique GUILD_ID.")
         return
 
     channel = guild.get_channel(CHANNEL_ID)
-    if not channel:
-        print("❌ Canal não encontrado")
+    if not channel or not isinstance(channel, discord.TextChannel):
+        print("❌ Canal não encontrado ou não é de texto. Verifique CHANNEL_ID.")
         return
 
-    embed = discord.Embed(
+    embed = Embed(
         title="Whitelist do servidor",
-        description="Clique no botão abaixo para se whitelistar.\nInforme seu nome e ID.",
+        description="Clique no botão abaixo para se whitelistar.\nVocê precisará informar seu **nome** e **ID**.",
         color=discord.Color.green()
     )
     embed.add_field(name="Status do Bot", value="🟢 Online e funcionando")
 
-    # Remove mensagens antigas do bot (exceto fixadas)
-    pinned = await channel.pins()
-    bot_pinned = [m for m in pinned if m.author.id == bot.user.id]
-    recent_messages = await channel.history(limit=100).flatten()
-    for msg in recent_messages:
-        if msg.author.id == bot.user.id and msg not in bot_pinned:
-            await msg.delete()
+    # Botão de whitelist
+    class WhitelistView(ui.View):
+        @ui.button(label="✅ Whitelist", style=ButtonStyle.green, custom_id="whitelist")
+        async def whitelist_button(self, interaction: Interaction, button: ui.Button):
+            await interaction.response.send_modal(WhitelistModal())
 
-    # Se já existir mensagem fixada do bot, atualiza
-    if bot_pinned:
-        await bot_pinned[0].edit(embed=embed, view=WhitelistView())
-        print(f"🔄 Embed de whitelist atualizado no canal #{channel.name}")
-        return
+    # Modal para nome e ID
+    class WhitelistModal(ui.Modal, title="Whitelist - Informações"):
+        nome = ui.TextInput(label="Digite seu nome", style=discord.TextStyle.short, required=True)
+        user_id = ui.TextInput(label="Digite sua ID", style=discord.TextStyle.short, required=True)
 
-    # Caso contrário, envia nova mensagem e fixa
-    msg = await channel.send(embed=embed, view=WhitelistView())
-    await msg.pin()
-    print(f"✅ Embed de whitelist enviado no canal #{channel.name}")
+        async def on_submit(self, interaction: Interaction):
+            member = await interaction.guild.fetch_member(interaction.user.id)
+            is_owner = interaction.guild.owner_id == interaction.user.id
 
-# Roda o bot
+            # Alterar nickname se não for dono
+            if not is_owner:
+                try:
+                    await member.edit(nick=f"{self.user_id.value} - {self.nome.value}")
+                except Exception as e:
+                    print(f"Erro ao alterar nickname: {e}")
+
+            # Roles
+            role_whitelisted = discord.utils.get(interaction.guild.roles, name="Whitelisted")
+            role_membros = discord.utils.get(interaction.guild.roles, name="Membros")
+            role_unverified = discord.utils.get(interaction.guild.roles, name="UNVERIFIED")
+
+            if role_whitelisted:
+                await member.add_roles(role_whitelisted)
+            if role_membros:
+                await member.add_roles(role_membros)
+            if role_unverified:
+                await member.remove_roles(role_unverified)
+
+            aviso_owner = "" if not is_owner else "\n⚠️ Você é o dono do servidor — nickname não alterado."
+            await interaction.response.send_message(
+                f"✅ Você foi whitelisted!\nSeu nickname foi alterado para: **{self.user_id.value} - {self.nome.value}**{aviso_owner}",
+                ephemeral=True
+            )
+
+    # Deleta mensagens antigas do bot no canal (exceto fixada)
+    try:
+        pinned_messages = await channel.pins()
+        pinned_bot_msg = next((m for m in pinned_messages if m.author == bot.user), None)
+        recent_messages = await channel.history(limit=100).flatten()
+        for msg in recent_messages:
+            if msg.author == bot.user and msg != pinned_bot_msg:
+                await msg.delete()
+    except Exception as e:
+        print(f"Erro ao limpar mensagens antigas: {e}")
+
+    # Envia embed com botão
+    if pinned_bot_msg:
+        await pinned_bot_msg.edit(embed=embed, view=WhitelistView())
+    else:
+        msg = await channel.send(embed=embed, view=WhitelistView())
+        await msg.pin()
+
+# ----------------------
+# Rodar bot
+# ----------------------
+TOKEN = os.environ.get("DISCORD_TOKEN")
 if not TOKEN:
     raise ValueError("❌ DISCORD_TOKEN não definido nas variáveis de ambiente.")
 
