@@ -13,6 +13,7 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 GUILD_ID = int(os.getenv("GUILD_ID", 0))
 CHANNEL_ID = int(os.getenv("CHANNEL_ID", 0))
 
+
 # Função para enviar ou atualizar embed de whitelist
 async def enviar_embed_whitelist():
     if GUILD_ID == 0 or CHANNEL_ID == 0:
@@ -36,11 +37,18 @@ async def enviar_embed_whitelist():
     )
     embed.add_field(name="Status do Bot", value="🟢 Online e funcionando")
 
-    # Remove mensagens antigas do bot no canal (exceto a fixada)
-    pinned_messages = await canal.pins()
+    # Mensagens fixadas
+    pinned_messages = []
+    async for m in canal.pins():
+        pinned_messages.append(m)
     mensagem_fixada = next((m for m in pinned_messages if m.author == bot.user), None)
 
-    recent_messages = await canal.history(limit=100).flatten()
+    # Histórico de mensagens recentes
+    recent_messages = []
+    async for m in canal.history(limit=100):
+        recent_messages.append(m)
+
+    # Deleta mensagens antigas do bot (exceto a fixada)
     for m in recent_messages:
         if m.author == bot.user and m != mensagem_fixada:
             try:
@@ -48,7 +56,7 @@ async def enviar_embed_whitelist():
             except:
                 pass
 
-    # Cria o botão de whitelist
+    # Cria botão de whitelist
     button = discord.ui.Button(label="✅ Whitelist", style=discord.ButtonStyle.success, custom_id="whitelist")
     view = discord.ui.View()
     view.add_item(button)
@@ -72,6 +80,7 @@ async def on_ready():
 # Interações de botões e modais
 @bot.event
 async def on_interaction(interaction: discord.Interaction):
+    # Botão de whitelist
     if interaction.type == discord.InteractionType.component:
         if interaction.data["custom_id"] == "whitelist":
             modal = discord.ui.Modal(title="Whitelist - Informações")
@@ -81,8 +90,10 @@ async def on_interaction(interaction: discord.Interaction):
             modal.add_item(id_input)
             await interaction.response.send_modal(modal)
 
+    # Submissão do modal
     elif interaction.type == discord.InteractionType.modal_submit:
         if interaction.data["custom_id"] == "whitelist_modal":
+            # Extrai valores do modal
             nome = interaction.data["components"][0]["components"][0]["value"]
             id_val = interaction.data["components"][1]["components"][0]["value"]
 
