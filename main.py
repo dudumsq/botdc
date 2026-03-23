@@ -21,15 +21,19 @@ class WhitelistModal(discord.ui.Modal, title="Whitelist - Informações"):
     async def on_submit(self, interaction: discord.Interaction):
         guild = interaction.guild
         if not guild:
-            await interaction.response.send_message("❌ Erro ao obter informações do servidor.", ephemeral=True)
+            await interaction.response.send_message(
+                "❌ Erro ao obter informações do servidor.", ephemeral=True
+            )
             return
 
         member = await guild.fetch_member(interaction.user.id)
         is_owner = guild.owner_id == interaction.user.id
 
+        # Alterar nickname
         if not is_owner:
             await member.edit(nick=f"{self.id_val.value} - {self.nome.value}")
 
+        # Atualizar roles
         role_whitelist = discord.utils.get(guild.roles, name="Whitelisted")
         role_membros = discord.utils.get(guild.roles, name="Membros")
         role_unverified = discord.utils.get(guild.roles, name="UNVERIFIED")
